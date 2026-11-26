@@ -1,0 +1,38 @@
+# E1 (EXPERIMENT.md): read the staff-gate environment back, as ADR-0082 decision 2.2 says, from a job that names
+# no environment. It runs in CI because this session's proxy refuses the environments API paths (measured
+# 2026-11-25: HTTP 403 "not permitted through this proxy"). Dispatched by the session after the sponsor's go.
+name: lab-readback
+run-name: lab-readback ${{ inputs.step }}
+on:
+  workflow_dispatch:
+    inputs:
+      step:
+        description: "staff-gate (C1) or missing (C1b)"
+        type: choice
+        options: [staff-gate, missing]
+permissions:
+  contents: write  # save.sh commits the captured output to lab/results
+  actions: read
+jobs:
+  touch:
+    # C1b only: a job that names an environment nobody created. The readback job then reads what GitHub made.
+    if: inputs.step == 'missing'
+    runs-on: ubuntu-latest
+    environment: lab-never-created
+    timeout-minutes: 2
+    steps:
+      - run: echo "this job named the environment lab-never-created"
+  readback:
+    needs: touch
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read back
+        env:
+          GHA_TOKEN: ${{ github.token }}
+          STEP: ${{ inputs.step }}
+        run: scripts/readback.sh "$STEP"

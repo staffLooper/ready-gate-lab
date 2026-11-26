@@ -1,0 +1,51 @@
+# E2.3 (EXPERIMENT.md), the Architect's addition: a pull request INTO main whose branch adds a `pull_request`
+# workflow that names staff-gate. Expected: refused, because `pull_request` runs on refs/pull/N/merge.
+#
+# This file is NOT in .github/workflows on main, on purpose: there it would run on every pull request into
+# main, including this plan's own, and naming staff-gate before the sponsor creates it would make GitHub
+# create it with no branch rule (C1b). The session copies it to .github/workflows/lab-pr-probe.yml on the
+# branch probe/pr-into-main only, at step E2.3.
+name: lab-pr-probe
+run-name: lab-pr-probe ${{ github.event_name }} ${{ github.ref_name }}
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  with-environment:
+    if: github.event.pull_request.head.ref == 'probe/pr-into-main'
+    runs-on: ubuntu-latest
+    environment: staff-gate
+    timeout-minutes: 2
+    steps:
+      - env:
+          KEY: ${{ secrets.STAFF_GATE_PRIVATE_KEY }}
+        run: if [ -n "$KEY" ]; then echo "key_present=true"; else echo "key_present=false"; fi
+  without-environment:
+    if: github.event.pull_request.head.ref == 'probe/pr-into-main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - env:
+          KEY: ${{ secrets.STAFF_GATE_PRIVATE_KEY }}
+        run: if [ -n "$KEY" ]; then echo "key_present=true"; else echo "key_present=false"; fi
+  record:
+    needs: [with-environment, without-environment]
+    if: always() && github.event.pull_request.head.ref == 'probe/pr-into-main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: read
+      checks: read
+      deployments: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - env:
+          GHA_TOKEN: ${{ github.token }}
+          EVENT_ACTION: ${{ github.event.action }}
+          EVENT_CHANGES: ${{ toJSON(github.event.changes) }}
+        run: scripts/probe-record.sh

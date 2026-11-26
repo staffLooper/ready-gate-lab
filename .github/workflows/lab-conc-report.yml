@@ -1,0 +1,25 @@
+# E5's report (EXPERIMENT.md): reads the lab-conc-* runs since SINCE and the burst log, and saves the counts.
+name: lab-conc-report
+run-name: lab-conc-report since ${{ inputs.since }}
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "ISO time just before the first burst, for example 2026-11-27T14:00:00Z"
+        required: true
+permissions:
+  contents: write  # save.sh
+  actions: read
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Report
+        env:
+          GHA_TOKEN: ${{ github.token }}
+          SINCE: ${{ inputs.since }}
+        run: scripts/conc-report.sh
