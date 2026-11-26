@@ -1,0 +1,78 @@
+# E0, E3 and E4's gate half (EXPERIMENT.md): the check-run ledger and the status cap, as the gate App.
+# workflow_dispatch only, on main only (the staff-gate environment refuses every other ref). Dispatched by the
+# session, one step at a time, after the sponsor's go.
+name: lab-ledger
+run-name: lab-ledger ${{ inputs.step }} ${{ inputs.sha }}
+on:
+  workflow_dispatch:
+    inputs:
+      step:
+        type: choice
+        options: [app-readback, ownership, output-limit, visibility, read-after-write, rerequest,
+                  flood-seed, flood-after, cap-gate, delete-run, gc-reread]
+      sha:
+        description: "The commit the step writes on (see EXPERIMENT.md, Setup)"
+        required: false
+      pr_head:
+        description: "visibility: head sha of the lab/vis pull request"
+        required: false
+      n:
+        description: "read-after-write: rounds"
+        required: false
+        default: "100"
+      target_run:
+        description: "delete-run: the Actions run id of the ownership step"
+        required: false
+      check_run:
+        description: "delete-run: check run A's id (runs/ownership/<run>/check-run-A.txt)"
+        required: false
+      app_id:
+        description: "delete-run, gc-reread: the gate App's id, from E0's app.json"
+        required: false
+permissions:
+  contents: write  # save.sh
+  checks: write    # github.token as "another App" in C4 and C5
+  statuses: write
+  actions: write   # delete-run
+jobs:
+  gate:
+    # Every step that needs the gate App's token. The only job here that names staff-gate.
+    if: inputs.step != 'delete-run' && inputs.step != 'gc-reread'
+    runs-on: ubuntu-latest
+    environment: staff-gate
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Mint the gate App's token
+        env:
+          STAFF_GATE_APP_ID: ${{ vars.STAFF_GATE_APP_ID }}
+          STAFF_GATE_PRIVATE_KEY: ${{ secrets.STAFF_GATE_PRIVATE_KEY }}
+        run: scripts/app-token.sh "$RUNNER_TEMP/out"
+      - name: Run the step
+        env:
+          GHA_TOKEN: ${{ github.token }}
+          STEP: ${{ inputs.step }}
+          SHA: ${{ inputs.sha }}
+          PR_HEAD: ${{ inputs.pr_head }}
+          N: ${{ inputs.n }}
+        run: scripts/ledger.sh "$STEP"
+  nokey:
+    # Steps that need no gate token run without the environment.
+    if: inputs.step == 'delete-run' || inputs.step == 'gc-reread'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run the step
+        env:
+          GHA_TOKEN: ${{ github.token }}
+          STEP: ${{ inputs.step }}
+          SHA: ${{ inputs.sha }}
+          TARGET_RUN: ${{ inputs.target_run }}
+          CHECK_RUN: ${{ inputs.check_run }}
+          APP_ID: ${{ inputs.app_id }}
+        run: scripts/ledger.sh "$STEP"

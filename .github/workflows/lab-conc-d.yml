@@ -1,0 +1,35 @@
+# E5 (EXPERIMENT.md), setup D: no concurrency group: the control (nothing should be cancelled). Its completion
+# is the workflow_run event that setups A and B also evaluate on, as `ready.yml` does for staff-review.
+# Runs only for pull requests whose title starts "[burst]"; burst.sh makes the events. No secrets, no environment.
+name: lab-conc-d
+run-name: "${{ github.event.pull_request.title || github.event.issue.title || github.event.workflow_run.display_title }} | ${{ github.event_name }} ${{ github.event.action }} ${{ github.event.comment.id || github.event.label.name || github.event.after || github.event.workflow_run.id }}"
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited, labeled, unlabeled]
+  issue_comment:
+    types: [created, edited, deleted]
+permissions: {}
+env:
+  EVAL_SECONDS: 20  # how long an evaluation holds its group; the ADR's evaluate is unmeasured
+jobs:
+  evaluate:
+    if: startsWith(github.event.pull_request.title || github.event.issue.title || github.event.workflow_run.display_title, '[burst]')
+    name: evaluate group=none-by-design
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Record what only this event's payload carries
+        env:
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          LABEL: ${{ github.event.label.name }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+          UPSTREAM_RUN: ${{ github.event.workflow_run.id }}
+        run: |
+          body_sha=$(printf '%s' "$COMMENT_BODY" | sha256sum | cut -c1-12)
+          echo "facts event=$EVENT action=$ACTION label=$LABEL comment=$COMMENT_ID body_sha=$body_sha before=$BEFORE after=$AFTER upstream_run=$UPSTREAM_RUN"
+      - run: sleep 5; echo evaluated

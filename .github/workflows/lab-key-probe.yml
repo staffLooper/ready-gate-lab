@@ -1,0 +1,79 @@
+# E2 (EXPERIMENT.md): can a job reach STAFF_GATE_PRIVATE_KEY from anywhere but the default branch?
+# Each run has three jobs: one that names staff-gate, one that names no environment, and `record`, which reads
+# the run's own jobs and logs and saves the verdict. The probes print only key_present=true|false.
+#
+# Triggers, and what each case expects (ADR-0082 decision 2.2):
+#   workflow_dispatch on main ............ E2.0 control: admitted, key present
+#   workflow_dispatch on probe/pushed .... E2.1b: refused
+#   push to probe/** ..................... E2.1: refused (the file runs from the pushed branch)
+#   push of tag main ..................... E2.4: refused (the policy is of type branch)
+#   pull_request into lab/base-x ......... E2.2a: refused (runs on refs/pull/N/merge)
+#   pull_request_target into lab/base-x .. E2.2b: refused (runs on lab/base-x)
+#   pull_request_target into main ........ E2.2c, after the retarget: admitted by design; records `changes.base`
+# Nothing here triggers on this plan's own pull request or on a merge to main.
+name: lab-key-probe
+run-name: lab-key-probe ${{ github.event_name }} ${{ github.ref_name }} ${{ github.event.action }}
+on:
+  workflow_dispatch:
+  push:
+    branches: ['probe/**']
+    tags: ['main']
+  pull_request:
+    branches: ['lab/base-x']
+  pull_request_target:
+    branches: ['lab/base-x', 'main']
+    types: [opened, synchronize, reopened, edited]
+permissions:
+  contents: read
+jobs:
+  with-environment:
+    # pull_request_target: same-repository probe/* branches only, so a stranger's fork never starts a job that
+    # names the environment (the lab is public).
+    if: >-
+      github.event_name != 'pull_request_target' ||
+      (startsWith(github.head_ref, 'probe/') && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    environment: staff-gate
+    timeout-minutes: 2
+    steps:
+      - name: Report whether the key and the App id are present (never their values)
+        env:
+          KEY: ${{ secrets.STAFF_GATE_PRIVATE_KEY }}
+          APP_ID: ${{ vars.STAFF_GATE_APP_ID }}
+        run: |
+          if [ -n "$KEY" ]; then echo "key_present=true"; else echo "key_present=false"; fi
+          if [ -n "$APP_ID" ]; then echo "app_id_present=true"; else echo "app_id_present=false"; fi
+          echo "ref=$GITHUB_REF event=$GITHUB_EVENT_NAME"
+  without-environment:
+    if: >-
+      github.event_name != 'pull_request_target' ||
+      (startsWith(github.head_ref, 'probe/') && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Report whether a repository or organization secret of that name exists
+        env:
+          KEY: ${{ secrets.STAFF_GATE_PRIVATE_KEY }}
+        run: if [ -n "$KEY" ]; then echo "key_present=true"; else echo "key_present=false"; fi
+  record:
+    needs: [with-environment, without-environment]
+    if: >-
+      always() && (github.event_name != 'pull_request_target' ||
+      (startsWith(github.head_ref, 'probe/') && github.event.pull_request.head.repo.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write  # save.sh; read-only on a fork's pull_request, where the save fails and the run log is the record
+      actions: read
+      checks: read
+      deployments: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Record the run's jobs and the verdict
+        env:
+          GHA_TOKEN: ${{ github.token }}
+          EVENT_ACTION: ${{ github.event.action }}
+          EVENT_CHANGES: ${{ toJSON(github.event.changes) }}
+        run: scripts/probe-record.sh

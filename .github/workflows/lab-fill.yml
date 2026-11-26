@@ -1,0 +1,46 @@
+# E3.7 and E4's fill (EXPERIMENT.md): the long fills, with github.token only. No environment, no key.
+# Dispatched by the session after the sponsor's go. Each can take hours (rate limits); both resume if re-dispatched.
+name: lab-fill
+run-name: lab-fill ${{ inputs.step }} ${{ inputs.sha }}
+on:
+  workflow_dispatch:
+    inputs:
+      step:
+        type: choice
+        options: [cap, flood]
+      sha:
+        description: "cap: the lab/cap commit; flood: the lab/flood commit"
+        required: true
+      app_id:
+        description: "flood: the gate App's id, from E0's app.json"
+        required: false
+      flood_ref:
+        description: "flood: the branch to dispatch lab-flood.yml on"
+        required: false
+        default: lab/flood
+      checkpoints:
+        description: "flood: suite counts to read at"
+        required: false
+        default: "500 990 1000 1010 1100 1300"
+permissions:
+  contents: write  # save.sh
+  statuses: write  # cap
+  actions: write   # flood: dispatch lab-flood.yml
+  checks: read
+jobs:
+  fill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fill
+        env:
+          GHA_TOKEN: ${{ github.token }}
+          STEP: ${{ inputs.step }}
+          SHA: ${{ inputs.sha }}
+          APP_ID: ${{ inputs.app_id }}
+          FLOOD_REF: ${{ inputs.flood_ref }}
+          CHECKPOINTS: ${{ inputs.checkpoints }}
+        run: scripts/fill.sh "$STEP"

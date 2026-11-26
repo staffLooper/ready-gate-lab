@@ -1,0 +1,12 @@
+# E3.7 (EXPERIMENT.md): one run of this is one more check suite on the commit it runs at (relayed; fill.sh
+# counts suites, not runs, so it measures that too). lab-fill.yml dispatches it on lab/flood; nothing else.
+name: lab-flood
+on:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: "true"
